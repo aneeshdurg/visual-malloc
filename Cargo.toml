@@ -1,0 +1,8 @@
+[package]
+name = "malloc-vis"
+version = "0.1.0"
+authors = ["Aneesh Durg <durg2@illinois.edu>"]
+edition = "2018"
+
+[dependencies]
+quicksilver = "*"
