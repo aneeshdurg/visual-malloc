@@ -4,11 +4,17 @@ extern crate quicksilver;
 use quicksilver::{
     Future, Result,
     combinators::result,
-    geom::{Shape, Rectangle, Vector},
+    geom::{Shape, Rectangle, Vector, Transform},
     graphics::{Background::Col, Background::Img, Color, Font, FontStyle, Image},
-    input::{MouseButton, ButtonState},
+    input::{MouseButton, ButtonState, Key},
     lifecycle::{Asset, Event, Settings, State, Window, run}
 };
+
+struct Block {
+    rect: Rectangle,
+    allocated: bool,
+    space_used: i32,
+}
 
 struct SbrkDescriptor {
     end_of_heap_bytes: i32,
@@ -19,18 +25,30 @@ struct SbrkDescriptor {
 }
 
 struct AllocationMenu {
+    y_offset: f32,
     free_button: Rectangle,
     free_text: Asset<Image>,
+    // TODO
+    //coalesce_left_button: Rectangle,
+    //coalesce_left_text: Asset<Image>,
+    //coalesce_right_button: Rectangle,
+    //coalesce_right_text: Asset<Image>,
+
+    allocate_button: Rectangle,
+    allocate_text: Asset<Image>,
+    allocate_selected: bool,
+    allocate_amt: i32,
+
+    get_input: bool,
+    input: i32,
+    input_prompt: Asset<Image>,
 
     font_size: Vector,
     font_num_map: Asset<Image>,
-    // TODO
-    //coalesce_button: Rectangle,
-    //coalesce_text: Asset<Image>,
 }
 
 impl AllocationMenu {
-    fn new(font_size_x: f32, font_size_y: f32) -> Result<Self> {
+    fn new(font_size_x: f32, font_size_y: f32, y_offset: f32) -> Result<Self> {
         let font_num_map = Asset::new(Font::load("mononoki-Regular.ttf")
             .and_then(move |font| {
                 let style = FontStyle::new(font_size_y, Color::BLACK);
@@ -43,33 +61,165 @@ impl AllocationMenu {
                 result(font.render("free", &style))
             }));
 
+        let allocate_asset = Asset::new(Font::load("mononoki-Regular.ttf")
+            .and_then(move |font| {
+                let style = FontStyle::new(36.0, Color::BLACK);
+                result(font.render("allocate", &style))
+            }));
+
+        let input_asset = Asset::new(Font::load("mononoki-Regular.ttf")
+            .and_then(move |font| {
+                let style = FontStyle::new(36.0, Color::BLACK);
+                result(font.render("Input number of bytes: ", &style))
+            }));
+
+        //let coalesce_right_asset = Asset::new(Font::load("mononoki-Regular.ttf")
+        //    .and_then(move |font| {
+        //        let style = FontStyle::new(36.0, Color::BLACK);
+        //        result(font.render("coalesce-r", &style))
+        //    }));
+
+        //let coalesce_left_asset = Asset::new(Font::load("mononoki-Regular.ttf")
+        //    .and_then(move |font| {
+        //        let style = FontStyle::new(36.0, Color::BLACK);
+        //        result(font.render("coalesce-r", &style))
+        //    }));
+
+        let center_x = (SBRK_MENU_PX as f32) + 5.0;
+        let center_y = y_offset + (SBRK_MENU_PX as f32)/2.0;
+
         Ok(AllocationMenu {
-            free_button: Rectangle::new((0, 0), (SBRK_MENU_PX, SBRK_MENU_PX)),
+            y_offset: y_offset,
+            free_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
+                .with_center((center_x, center_y)),
             free_text: free_asset,
+
+            allocate_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
+                .with_center((center_x, center_y)),
+            allocate_text: allocate_asset,
+            allocate_selected: false,
+            allocate_amt: 0,
+
+            get_input: false,
+            input: 0,
+            input_prompt: input_asset,
+
             font_size: Vector::new(font_size_x, font_size_y),
             font_num_map: font_num_map,
         })
     }
-    fn draw(&mut self, window: &mut Window, size: i32, y_offset: f32) -> Result<()> {
-        let center_x = self.free_button.x()/2.0 + 5.0 + 50.0;
-        let center_y = y_offset + self.free_button.y()/2.0;
-        let free_rect = self.free_button.with_center((center_x, center_y));
 
-        let mut y_off = y_offset;
+    fn begin_input(&mut self) {
+        self.get_input = true;
+        self.input = 0;
+    }
+
+    fn end_input(&mut self) {
+        self.get_input = false;
+    }
+
+    fn draw_free_button(&mut self, window: &mut Window) -> Result<()> {
+        let free_rect = self.free_button;
 
         window.draw(&free_rect, Col(Color::CYAN));
         self.free_text.execute(|image| {
-            window.draw(&image.area().with_center(
-                    (center_x, center_y)), Img(&image));
+            window.draw(&image.area().with_center(free_rect.center()), Img(&image));
             Ok(())
         })?;
 
-        y_off += 2.0*self.free_button.y() + 5.0;
-        let mut x = self.font_size.x;
-        let mut y = self.font_size.y;
+        Ok(())
+    }
+
+    fn draw_allocate_button(&mut self, window: &mut Window) -> Result<()> {
+        let allocate_rect = self.allocate_button;
+
+        window.draw(&allocate_rect, Col(Color::CYAN));
+        self.allocate_text.execute(|image| {
+            window.draw(&image.area().with_center(allocate_rect.center()), Img(&image));
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    fn draw_input_box(&mut self, window: &mut Window) -> Result<()> {
+        let y_offset = self.y_offset;
+        self.input_prompt.execute(|image| {
+            window.draw(&image.area().with_center(
+                    ((MEM_GAP as f32) + image.area().width()/2.0, y_offset)), Img(&image));
+            Ok(())
+        })?;
+
+        let x = self.font_size.x;
+        let y = self.font_size.y;
+        let input = self.input.to_string();
         self.font_num_map.execute(|image| {
-            let subimg = &image.subimage(Rectangle::new((0, 0), (x, y)));
-            window.draw(&subimg.area().with_center((6.0, y_off)), Img(&subimg));
+            for (i, c) in input.chars().enumerate() {
+                let index = ((c as i32) - ('0' as i32)) as f32;
+                let subimg = &image.subimage(
+                    Rectangle::new((index*x, 0), (x, y)));
+                let x_off = (i as f32)*x + x/2.0;
+                window.draw(
+                    &subimg.area().with_center((x_off, y_offset + 50.0)), Img(&subimg));
+            }
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    fn draw(&mut self, window: &mut Window, block: &mut Block) -> Result<()> {
+
+        if self.allocate_selected {
+            if !self.get_input {
+                block.allocated = true;
+                block.space_used = self.input;
+                self.allocate_selected = false;
+            }
+        }
+
+        if self.get_input {
+            return self.draw_input_box(window);
+        }
+
+        let mut y_off = self.y_offset;
+
+        if block.allocated {
+            self.draw_free_button(window)?;
+        } else {
+            self.draw_allocate_button(window)?;
+        }
+
+        y_off += self.free_button.height() + 50.0;
+        let x = self.font_size.x;
+        let y = self.font_size.y;
+        let blk_size =
+            (block.rect.width()/(PX_PER_BYTE as f32) + MEM_GAP as f32) as i32;
+
+        let size_str: String = blk_size.to_string();
+        self.font_num_map.execute(|image| {
+            for (i, c) in size_str.chars().enumerate() {
+                let index = ((c as i32) - ('0' as i32)) as f32;
+                let subimg = &image.subimage(
+                    Rectangle::new((index*x, 0), (x, y)));
+                let x_off = (i as f32)*x + x/2.0;
+                window.draw(
+                    &subimg.area().with_center((x_off, y_off)), Img(&subimg));
+            }
+            Ok(())
+        })?;
+
+        let used_str = block.space_used.to_string();
+        let x_offset = (size_str.chars().count() as f32) * x + 2.0 * x;
+        self.font_num_map.execute(|image| {
+            for (i, c) in used_str.chars().enumerate() {
+                let index = ((c as i32) - ('0' as i32)) as f32;
+                let subimg = &image.subimage(
+                    Rectangle::new((index*x, 0), (x, y)));
+                let x_off = (i as f32)*x + x/2.0;
+                window.draw(
+                    &subimg.area().with_center((x_offset + x_off, y_off)), Img(&subimg));
+            }
             Ok(())
         })?;
 
@@ -78,7 +228,7 @@ impl AllocationMenu {
 }
 
 struct MallocState {
-    allocations: Vec<(Rectangle, bool)>,
+    allocations: Vec<Block>,
     alloc_menu: AllocationMenu,
     sbrk_obj: SbrkDescriptor,
     display_menu: Option<usize>,
@@ -98,8 +248,27 @@ impl MallocState {
            return Ok(());
        }
 
+       if mouse_pos.overlaps_rectangle(&self.alloc_menu.allocate_button) {
+           match self.display_menu {
+               Some(i) => {
+                   //self.allocations[i].1 = !self.allocations[i].1;
+                   if (self.allocations[i].allocated) {
+                       self.allocations[i].allocated = false;
+                   } else {
+                       self.alloc_menu.allocate_selected = true;
+                       self.alloc_menu.begin_input();
+                   }
+               }
+               _ => {}
+           }
+       }
+
+       if self.alloc_menu.allocate_selected {
+           return Ok(());
+       }
+
        for (i, alloc) in (&self.allocations).iter().enumerate() {
-           let rect = alloc.0;
+           let rect = alloc.rect;
            if mouse_pos.overlaps_rectangle(&rect) {
                self.display_menu = Some(i);
                break;
@@ -120,9 +289,14 @@ impl MallocState {
 
         if curr_bytes > (self.sbrk_obj.end_of_heap_bytes + MEM_GAP) {
             let new_bytes = curr_bytes - self.sbrk_obj.end_of_heap_bytes;
-            self.allocations.push((Rectangle::new(
+            self.allocations.push(
+                Block {
+                    rect: Rectangle::new(
                         (self.sbrk_obj.end_of_heap_bytes, 0),
-                        (new_bytes - MEM_GAP, SBRK_MENU_PX)), false));
+                        (new_bytes - MEM_GAP, SBRK_MENU_PX)),
+                    allocated: false,
+                    space_used: 0,
+                });
             self.sbrk_obj.end_of_heap_bytes = curr_bytes;
         } else {
             self.sbrk_obj.sbrk_rect = Rectangle::new(
@@ -156,6 +330,25 @@ impl MallocState {
         }
         Ok(())
     }
+
+    fn handle_keypress(&mut self, c: char) -> Result<()> {
+        if !self.alloc_menu.get_input {
+            return Ok(());
+        }
+
+        if (c as i32) <= ('9' as i32) && (c as i32) >= ('0' as i32) {
+            // TODO handle overflow!
+            self.alloc_menu.input *= 10;
+            self.alloc_menu.input += (c as i32) - ('0' as i32);
+        } else if c == ' ' {
+            self.alloc_menu.input /= 10;
+        } else if c == '\n' {
+            self.alloc_menu.end_input();
+        }
+
+
+        Ok(())
+    }
 }
 
 impl State for MallocState {
@@ -174,7 +367,8 @@ impl State for MallocState {
             old_mouse_pos: None,
         };
 
-        let alloc_menu = AllocationMenu::new(12.0, 24.0)?;
+        let alloc_menu = AllocationMenu::new(
+            12.0, 24.0, (SBRK_MENU_PX as f32)*2.0)?;
 
         Ok(MallocState {
             allocations: vec![],
@@ -199,6 +393,15 @@ impl State for MallocState {
             Event::MouseMoved(pos) => {
                 return self.handle_mouse_moved(pos, window);
             }
+            Event::Key(Key::Return, ButtonState::Pressed) => {
+                return self.handle_keypress('\n');
+            }
+            Event::Key(Key::Back, ButtonState::Pressed) => {
+                return self.handle_keypress(' ');
+            }
+            Event::Typed(c) => {
+                return self.handle_keypress(*c);
+            }
             _=> {}
         }
         Ok(())
@@ -215,8 +418,8 @@ impl State for MallocState {
         })?;
 
         for alloc in (&self.allocations).iter() {
-            let rect = alloc.0;
-            if alloc.1 {
+            let rect = alloc.rect;
+            if alloc.allocated {
                 window.draw(&rect, Col(Color::RED));
             } else {
                 window.draw(&rect, Col(Color::BLUE));
@@ -225,10 +428,13 @@ impl State for MallocState {
 
         match self.display_menu {
             Some(i) => {
-                // TODO take in y_offset while creating AllocationMenu so that we can detect clicks
-                // on free/other buttons when added
-                self.alloc_menu.draw(window,
-                        (self.allocations[i].0.width()/(PX_PER_BYTE as f32) + MEM_GAP as f32) as i32, 200.0);
+                let block_rect = self.allocations[i].rect;
+                let mut color = Color::BLUE.with_red(0.5);
+                if self.allocations[i].allocated {
+                    color = Color::RED.with_blue(0.5);
+                }
+                window.draw_ex(&block_rect, Col(color), Transform::IDENTITY, 0);
+                self.alloc_menu.draw(window, &mut self.allocations[i])?;
             }
             _ => {}
         }
