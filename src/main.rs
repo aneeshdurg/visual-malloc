@@ -28,16 +28,19 @@ struct AllocationMenu {
     y_offset: f32,
     free_button: Rectangle,
     free_text: Asset<Image>,
-    // TODO
-    //coalesce_left_button: Rectangle,
-    //coalesce_left_text: Asset<Image>,
-    //coalesce_right_button: Rectangle,
-    //coalesce_right_text: Asset<Image>,
+
+    coalesce_left_button: Rectangle,
+    coalesce_left_text: Asset<Image>,
+    coalesce_right_button: Rectangle,
+    coalesce_right_text: Asset<Image>,
+
+    //TODO
+    //split_button: Rectangle,
+    //split_text: Asset<Image>,
 
     allocate_button: Rectangle,
     allocate_text: Asset<Image>,
     allocate_selected: bool,
-    allocate_amt: i32,
 
     get_input: bool,
     input: i32,
@@ -73,17 +76,17 @@ impl AllocationMenu {
                 result(font.render("Input number of bytes: ", &style))
             }));
 
-        //let coalesce_right_asset = Asset::new(Font::load("mononoki-Regular.ttf")
-        //    .and_then(move |font| {
-        //        let style = FontStyle::new(36.0, Color::BLACK);
-        //        result(font.render("coalesce-r", &style))
-        //    }));
+        let coalesce_right_asset = Asset::new(Font::load("mononoki-Regular.ttf")
+            .and_then(move |font| {
+                let style = FontStyle::new(36.0, Color::BLACK);
+                result(font.render("coalesce-r", &style))
+            }));
 
-        //let coalesce_left_asset = Asset::new(Font::load("mononoki-Regular.ttf")
-        //    .and_then(move |font| {
-        //        let style = FontStyle::new(36.0, Color::BLACK);
-        //        result(font.render("coalesce-r", &style))
-        //    }));
+        let coalesce_left_asset = Asset::new(Font::load("mononoki-Regular.ttf")
+            .and_then(move |font| {
+                let style = FontStyle::new(36.0, Color::BLACK);
+                result(font.render("coalesce-l", &style))
+            }));
 
         let center_x = (SBRK_MENU_PX as f32) + 5.0;
         let center_y = y_offset + (SBRK_MENU_PX as f32)/2.0;
@@ -98,7 +101,13 @@ impl AllocationMenu {
                 .with_center((center_x, center_y)),
             allocate_text: allocate_asset,
             allocate_selected: false,
-            allocate_amt: 0,
+
+            coalesce_left_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
+                .with_center((center_x, center_y + 2.0 * (SBRK_MENU_PX as f32))),
+            coalesce_left_text: coalesce_left_asset,
+            coalesce_right_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
+                .with_center((center_x + 2.0 * (SBRK_MENU_PX as f32), center_y + 2.0 * (SBRK_MENU_PX as f32))),
+            coalesce_right_text: coalesce_right_asset,
 
             get_input: false,
             input: 0,
@@ -168,6 +177,26 @@ impl AllocationMenu {
         Ok(())
     }
 
+    fn draw_coalesce_menu(&mut self, window: &mut Window) -> Result<()> {
+        let coalesce_l_rect = self.coalesce_left_button;
+        let coalesce_r_rect = self.coalesce_right_button;
+
+        window.draw(&coalesce_l_rect, Col(Color::CYAN));
+        self.coalesce_left_text.execute(|image| {
+            window.draw(&image.area().with_center(coalesce_l_rect.center()), Img(&image));
+            Ok(())
+        })?;
+
+
+        window.draw(&coalesce_r_rect, Col(Color::CYAN));
+        self.coalesce_right_text.execute(|image| {
+            window.draw(&image.area().with_center(coalesce_r_rect.center()), Img(&image));
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
     fn draw(&mut self, window: &mut Window, block: &mut Block) -> Result<()> {
 
         if self.allocate_selected {
@@ -188,6 +217,7 @@ impl AllocationMenu {
             self.draw_free_button(window)?;
         } else {
             self.draw_allocate_button(window)?;
+            self.draw_coalesce_menu(window)?;
         }
 
         y_off += self.free_button.height() + 50.0;
@@ -240,23 +270,70 @@ static SBRK_MENU_PX: i32 = 100;
 static MEM_GAP: i32 = 5;
 
 impl MallocState {
+    fn coalesce(&mut self, idx1: i64, idx2: i64) -> bool{
+        let i1 = idx1 as usize;
+        let i2 = idx2 as usize;
+
+        if idx1 < 0 {
+            return false;
+        } else if idx2 > (self.allocations.len() as i64 - 1) {
+            return false;
+        } else if self.allocations[i1].allocated || self.allocations[i2].allocated {
+            return false;
+        }
+
+        let rect1 = self.allocations[i1].rect;
+        let rect2 = self.allocations[i2].rect;
+
+        self.allocations[i1].rect = Rectangle::new(
+            (rect1.x(), 0),
+            (rect1.width() + (MEM_GAP as f32) + rect2.width(), rect1.height()));
+        self.allocations.remove(i2);
+        return true;
+    }
+
     fn handle_click(
             &mut self, _event: &Event, window: &mut Window) -> Result<()> {
        let mouse_pos = window.mouse().pos();
        if mouse_pos.overlaps_rectangle(&self.sbrk_obj.sbrk_rect) {
            self.sbrk_obj.selected = true;
            return Ok(());
-       }
-
-       if mouse_pos.overlaps_rectangle(&self.alloc_menu.allocate_button) {
+       } else if mouse_pos.overlaps_rectangle(&self.alloc_menu.allocate_button) {
            match self.display_menu {
                Some(i) => {
                    //self.allocations[i].1 = !self.allocations[i].1;
-                   if (self.allocations[i].allocated) {
+                   if self.allocations[i].allocated {
                        self.allocations[i].allocated = false;
+                       self.allocations[i].space_used = 0;
                    } else {
                        self.alloc_menu.allocate_selected = true;
                        self.alloc_menu.begin_input();
+                   }
+               }
+               _ => {}
+           }
+       } else if mouse_pos.overlaps_rectangle(&self.alloc_menu.coalesce_left_button) {
+           match self.display_menu {
+               Some(i) => {
+                   if !self.allocations[i].allocated {
+                       if self.coalesce(i as i64 - 1, i as i64) {
+                           self.display_menu = None;
+                       }
+                   } else {
+                       // TODO implement split here
+                   }
+               }
+               _ => {}
+           }
+       } else if mouse_pos.overlaps_rectangle(&self.alloc_menu.coalesce_right_button) {
+           match self.display_menu {
+               Some(i) => {
+                    if !self.allocations[i].allocated {
+                       if self.coalesce(i as i64, i as i64 +1) {
+                           self.display_menu = None;
+                       }
+                   } else {
+                       // TODO implement split here
                    }
                }
                _ => {}
