@@ -27,7 +27,7 @@
     <script>
       // Hack to fix rendering
       var fix_display = setInterval(function() {
-          if (document.querySelector('canvas') != null)) {
+          if (document.getElementbyTagName('canvas').length != 0)) {
             document.getElementbyId('render').appendChild(
               document.querySelector('canvas'));
              clearInterval(fix_display);
