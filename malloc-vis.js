@@ -542,7 +542,10 @@ Module.STDWEB_PRIVATE.acquire_tmp = function( dummy ) {
     return {
         imports: {
             env: {
-                "__cargo_web_snippet_05eb1fa3a369aeb53fa30b81d7ffa84d99189bab": function($0, $1) {
+                "__cargo_web_snippet_01510599f578cf529356709889ce00e4bbfe822f": function($0, $1, $2) {
+                $1 = Module.STDWEB_PRIVATE.to_js($1);$2 = Module.STDWEB_PRIVATE.to_js($2);Module.STDWEB_PRIVATE.from_js($0, (function(){var box=document.getElementById("render");box.scrollTo(box.scrollLeft+($1),box.scrollTop+($2));})());
+            },
+            "__cargo_web_snippet_05eb1fa3a369aeb53fa30b81d7ffa84d99189bab": function($0, $1) {
                 $1 = Module.STDWEB_PRIVATE.to_js($1);Module.STDWEB_PRIVATE.from_js($0, (function(){return($1).createBuffer();})());
             },
             "__cargo_web_snippet_07820525f194d65cbe18442f5bf441b93e46afdf": function($0, $1) {

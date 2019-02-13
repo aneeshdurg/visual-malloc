@@ -14,21 +14,25 @@
                 }
 
                 var canvas = document.createElement( 'canvas' );
-                document.getElementbyId( 'render' ).appendChild( canvas );
+                document.getElementbyId('render').appendChild( canvas );
                 __cargo_web.canvas = canvas;
 
                 return canvas;
             }
         });
     </script>
+    <style>
+    html, body{
+        height: 100%;
+    }
+    </style>
 </head>
 <body>
     <script src="malloc-vis.js"></script>
     <script>
-      // Hack to fix rendering
       var fix_display = setInterval(function() {
-          if (document.getElementbyTagName('canvas').length != 0)) {
-            document.getElementbyId('render').appendChild(
+          if (document.getElementsByTagName('canvas').length != 0) {
+            document.getElementById('render').appendChild(
               document.querySelector('canvas'));
              clearInterval(fix_display);
           }
