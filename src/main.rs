@@ -1,4 +1,5 @@
-
+#[macro_use]
+extern crate stdweb;
 extern crate quicksilver;
 
 use quicksilver::{
@@ -6,9 +7,11 @@ use quicksilver::{
     combinators::result,
     geom::{Shape, Rectangle, Vector, Transform},
     graphics::{Background::Col, Background::Img, Color, Font, FontStyle, Image},
-    input::{MouseButton, ButtonState, Key},
+    input::{MouseButton, ButtonState},
     lifecycle::{Asset, Event, Settings, State, Window, run}
 };
+use stdweb::unstable::TryInto;
+use core::i32::MAX;
 
 struct Block {
     rect: Rectangle,
@@ -36,15 +39,9 @@ struct AllocationMenu {
 
     split_button: Rectangle,
     split_text: Asset<Image>,
-    split_selected: bool,
 
     allocate_button: Rectangle,
     allocate_text: Asset<Image>,
-    allocate_selected: bool,
-
-    get_input: bool,
-    input: i32,
-    input_prompt: Asset<Image>,
 
     font_size: Vector,
     font_num_map: Asset<Image>,
@@ -68,12 +65,6 @@ impl AllocationMenu {
             .and_then(move |font| {
                 let style = FontStyle::new(36.0, Color::BLACK);
                 result(font.render("allocate", &style))
-            }));
-
-        let input_asset = Asset::new(Font::load("mononoki-Regular.ttf")
-            .and_then(move |font| {
-                let style = FontStyle::new(36.0, Color::BLACK);
-                result(font.render("Input number of bytes: ", &style))
             }));
 
         let coalesce_right_asset = Asset::new(Font::load("mononoki-Regular.ttf")
@@ -106,7 +97,6 @@ impl AllocationMenu {
             allocate_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
                 .with_center((center_x, center_y)),
             allocate_text: allocate_asset,
-            allocate_selected: false,
 
             coalesce_left_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
                 .with_center((center_x, center_y + 2.0 * (SBRK_MENU_PX as f32))),
@@ -118,25 +108,10 @@ impl AllocationMenu {
             split_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
                 .with_center((center_x, center_y + 4.0 * (SBRK_MENU_PX as f32))),
             split_text: split_asset,
-            split_selected: false,
-
-
-            get_input: false,
-            input: 0,
-            input_prompt: input_asset,
 
             font_size: Vector::new(font_size_x, font_size_y),
             font_num_map: font_num_map,
         })
-    }
-
-    fn begin_input(&mut self) {
-        self.get_input = true;
-        self.input = 0;
-    }
-
-    fn end_input(&mut self) {
-        self.get_input = false;
     }
 
     fn draw_free_button(&mut self, window: &mut Window) -> Result<()> {
@@ -163,31 +138,6 @@ impl AllocationMenu {
         Ok(())
     }
 
-    fn draw_input_box(&mut self, window: &mut Window) -> Result<()> {
-        let y_offset = self.y_offset;
-        self.input_prompt.execute(|image| {
-            window.draw(&image.area().with_center(
-                    ((MEM_GAP as f32) + image.area().width()/2.0, y_offset)), Img(&image));
-            Ok(())
-        })?;
-
-        let x = self.font_size.x;
-        let y = self.font_size.y;
-        let input = self.input.to_string();
-        self.font_num_map.execute(|image| {
-            for (i, c) in input.chars().enumerate() {
-                let index = ((c as i32) - ('0' as i32)) as f32;
-                let subimg = &image.subimage(
-                    Rectangle::new((index*x, 0), (x, y)));
-                let x_off = (i as f32)*x + x/2.0;
-                window.draw(
-                    &subimg.area().with_center((x_off, y_offset + 50.0)), Img(&subimg));
-            }
-            Ok(())
-        })?;
-
-        Ok(())
-    }
 
     fn draw_coalesce_menu(&mut self, window: &mut Window) -> Result<()> {
         let coalesce_l_rect = self.coalesce_left_button;
@@ -222,22 +172,6 @@ impl AllocationMenu {
     }
 
     fn draw(&mut self, window: &mut Window, block: &mut Block) -> Result<()> {
-
-        // Split selected may modify MallocState.allocations so it's processed in
-        // MallocState's draw
-        if self.allocate_selected {
-            if !self.get_input {
-                if self.input <= (block.rect.width() as i32 + MEM_GAP) {
-                    block.allocated = true;
-                    block.space_used = self.input;
-                }
-                self.allocate_selected = false;
-            }
-        }
-
-        if self.get_input {
-            return self.draw_input_box(window);
-        }
 
         let mut y_off = self.y_offset;
 
@@ -299,24 +233,77 @@ static SBRK_MENU_PX: i32 = 100;
 static MEM_GAP: i32 = 5;
 
 impl MallocState {
+    fn alert_user(msg: &str) {
+        js! {
+            alert(@{msg});
+        }
+    }
+
+    fn get_user_input(prompt: &str) -> stdweb::Value {
+        let value = js! {
+            var input = prompt(@{prompt});
+            var num_input = Number(input);
+            if (isNaN(num_input) == NaN)
+                return @{MAX};
+            if (num_input > @{MAX})
+                return @{MAX};
+            return num_input;
+        };
+        value
+    }
+
+    fn do_allocate(&mut self, idx: usize) {
+        let bytes: i32 = MallocState::get_user_input(
+            "Enter number of bytes to be used")
+                .try_into().unwrap();
+
+        let block_size: i32 =
+            self.allocations[idx].rect.width() as i32 + MEM_GAP;
+        if bytes <= block_size {
+            self.allocations[idx].allocated = true;
+            self.allocations[idx].space_used = bytes;
+        } else {
+            MallocState::alert_user(
+                "The block is too small to store that amount!");
+        }
+    }
+
+    fn do_split(&mut self, idx: usize) {
+        let bytes: i32 = MallocState::get_user_input(
+            "Enter number of bytes for split")
+                .try_into().unwrap();
+        self.split(idx, bytes);
+    }
+
     fn split(&mut self, idx: usize, bytes: i32) {
         if bytes < MEM_GAP + 1 {
+            MallocState::alert_user(&format!(
+                concat!("Due to rendering constraints,",
+                " the minimum block size is {}"),
+                MEM_GAP + 1)[..]);
             return;
         }
         let alloc = self.allocations[idx].rect;
         let space_used = self.allocations[idx].space_used;
         let allocated = self.allocations[idx].allocated;
+        let block_size: i32 = alloc.width() as i32 + MEM_GAP;
         if allocated {
-            if bytes > (alloc.width() as i32 - space_used + MEM_GAP) {
+            if bytes > (block_size - space_used) {
+                MallocState::alert_user(&format!(
+                        concat!("Can't split this block with given new size.",
+                        "This block must have at least {} bytes."),
+                        space_used)[..]);
                 return;
             }
-        } else {
-            if bytes > (alloc.width() as i32 + MEM_GAP) {
-                return;
-            }
+        } else if bytes > block_size {
+            MallocState::alert_user(&format!(
+                    concat!("Can't split this block with given new size.",
+                    "This block only has {} bytes."),
+                    block_size)[..]);
+            return;
         }
 
-        let new_x = alloc.x() as i32 + alloc.width() as i32 + MEM_GAP - bytes;
+        let new_x = alloc.x() as i32 + block_size - bytes;
         self.allocations.insert(idx+1, Block {
             rect: Rectangle::new((new_x, 0), (bytes - MEM_GAP, SBRK_MENU_PX)),
             allocated: false,
@@ -362,8 +349,7 @@ impl MallocState {
                        self.allocations[i].allocated = false;
                        self.allocations[i].space_used = 0;
                    } else {
-                       self.alloc_menu.allocate_selected = true;
-                       self.alloc_menu.begin_input();
+                       self.do_allocate(i);
                    }
                }
                _ => {}
@@ -392,16 +378,9 @@ impl MallocState {
            }
        } else if mouse_pos.overlaps_rectangle(&self.alloc_menu.split_button) {
             match self.display_menu {
-               Some(i) => {
-                   self.alloc_menu.split_selected = true;
-                   self.alloc_menu.begin_input();
-               }
+               Some(i) => { self.do_split(i); }
                _ => {}
            }
-       }
-
-       if self.alloc_menu.allocate_selected  || self.alloc_menu.split_selected {
-           return Ok(());
        }
 
        for (i, alloc) in (&self.allocations).iter().enumerate() {
@@ -467,25 +446,6 @@ impl MallocState {
         }
         Ok(())
     }
-
-    fn handle_keypress(&mut self, c: char) -> Result<()> {
-        if !self.alloc_menu.get_input {
-            return Ok(());
-        }
-
-        if (c as i32) <= ('9' as i32) && (c as i32) >= ('0' as i32) {
-            // TODO handle overflow!
-            self.alloc_menu.input *= 10;
-            self.alloc_menu.input += (c as i32) - ('0' as i32);
-        } else if c == ' ' {
-            self.alloc_menu.input /= 10;
-        } else if c == '\n' {
-            self.alloc_menu.end_input();
-        }
-
-
-        Ok(())
-    }
 }
 
 impl State for MallocState {
@@ -529,16 +489,7 @@ impl State for MallocState {
             }
             Event::MouseMoved(pos) => {
                 return self.handle_mouse_moved(pos, window);
-            }
-            Event::Key(Key::Return, ButtonState::Pressed) => {
-                return self.handle_keypress('\n');
-            }
-            Event::Key(Key::Back, ButtonState::Pressed) => {
-                return self.handle_keypress(' ');
-            }
-            Event::Typed(c) => {
-                return self.handle_keypress(*c);
-            }
+            } 
             _=> {}
         }
         Ok(())
@@ -571,13 +522,6 @@ impl State for MallocState {
                     color = Color::RED.with_blue(0.5);
                 }
                 window.draw_ex(&block_rect, Col(color), Transform::IDENTITY, 0);
-
-                if self.alloc_menu.split_selected {
-                    if !self.alloc_menu.get_input {
-                        self.split(i, self.alloc_menu.input);
-                        self.alloc_menu.split_selected = false;
-                    }
-                }
                 self.alloc_menu.draw(window, &mut self.allocations[i])?;
             }
             _ => {}
@@ -587,7 +531,7 @@ impl State for MallocState {
     }
 }
 
-fn main() {
+pub fn main() {
     run::<MallocState>(
         "Malloc Visualization",
         Vector::new(TOTAL_MEMORY*PX_PER_BYTE + SBRK_MENU_PX, 800),

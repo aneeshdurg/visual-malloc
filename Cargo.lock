@@ -1099,6 +1099,7 @@ name = "malloc-vis"
 version = "0.1.0"
 dependencies = [
  "quicksilver 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "stdweb 0.4.13 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
