@@ -1,224 +1,23 @@
-#[macro_use]
-extern crate stdweb;
 extern crate quicksilver;
-
 use quicksilver::{
     Future, Result,
     combinators::result,
     geom::{Shape, Rectangle, Vector, Transform},
-    graphics::{Background::Col, Background::Img, Color, Font, FontStyle, Image},
+    graphics::{Background::Col, Background::Img, Color, Font, FontStyle},
     input::{MouseButton, ButtonState},
     lifecycle::{Asset, Event, Settings, State, Window, run}
 };
+
+#[macro_use]
+extern crate stdweb;
 use stdweb::unstable::TryInto;
+
 use core::i32::MAX;
 
-struct Block {
-    rect: Rectangle,
-    allocated: bool,
-    space_used: i32,
-}
-
-struct SbrkDescriptor {
-    end_of_heap_bytes: i32,
-    sbrk: Asset<Image>,
-    sbrk_rect: Rectangle,
-    selected: bool,
-    old_mouse_pos: Option<Vector>,
-}
-
-struct AllocationMenu {
-    y_offset: f32,
-    free_button: Rectangle,
-    free_text: Asset<Image>,
-
-    coalesce_left_button: Rectangle,
-    coalesce_left_text: Asset<Image>,
-    coalesce_right_button: Rectangle,
-    coalesce_right_text: Asset<Image>,
-
-    split_button: Rectangle,
-    split_text: Asset<Image>,
-
-    allocate_button: Rectangle,
-    allocate_text: Asset<Image>,
-
-    font_size: Vector,
-    font_num_map: Asset<Image>,
-}
-
-impl AllocationMenu {
-    fn new(font_size_x: f32, font_size_y: f32, y_offset: f32) -> Result<Self> {
-        let font_num_map = Asset::new(Font::load("mononoki-Regular.ttf")
-            .and_then(move |font| {
-                let style = FontStyle::new(font_size_y, Color::BLACK);
-                result(font.render("0123456789", &style))
-            }));
-
-        let free_asset = Asset::new(Font::load("mononoki-Regular.ttf")
-            .and_then(move |font| {
-                let style = FontStyle::new(36.0, Color::BLACK);
-                result(font.render("free", &style))
-            }));
-
-        let allocate_asset = Asset::new(Font::load("mononoki-Regular.ttf")
-            .and_then(move |font| {
-                let style = FontStyle::new(36.0, Color::BLACK);
-                result(font.render("allocate", &style))
-            }));
-
-        let coalesce_right_asset = Asset::new(Font::load("mononoki-Regular.ttf")
-            .and_then(move |font| {
-                let style = FontStyle::new(36.0, Color::BLACK);
-                result(font.render("coalesce-r", &style))
-            }));
-
-        let coalesce_left_asset = Asset::new(Font::load("mononoki-Regular.ttf")
-            .and_then(move |font| {
-                let style = FontStyle::new(36.0, Color::BLACK);
-                result(font.render("coalesce-l", &style))
-            }));
-
-        let split_asset = Asset::new(Font::load("mononoki-Regular.ttf")
-            .and_then(move |font| {
-                let style = FontStyle::new(36.0, Color::BLACK);
-                result(font.render("split", &style))
-            }));
-
-        let center_x = (SBRK_MENU_PX as f32) + 5.0;
-        let center_y = y_offset + (SBRK_MENU_PX as f32)/2.0;
-
-        Ok(AllocationMenu {
-            y_offset: y_offset,
-            free_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
-                .with_center((center_x, center_y)),
-            free_text: free_asset,
-
-            allocate_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
-                .with_center((center_x, center_y)),
-            allocate_text: allocate_asset,
-
-            coalesce_left_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
-                .with_center((center_x, center_y + 2.0 * (SBRK_MENU_PX as f32))),
-            coalesce_left_text: coalesce_left_asset,
-            coalesce_right_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
-                .with_center((center_x + 2.0 * (SBRK_MENU_PX as f32), center_y + 2.0 * (SBRK_MENU_PX as f32))),
-            coalesce_right_text: coalesce_right_asset,
-
-            split_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
-                .with_center((center_x, center_y + 4.0 * (SBRK_MENU_PX as f32))),
-            split_text: split_asset,
-
-            font_size: Vector::new(font_size_x, font_size_y),
-            font_num_map: font_num_map,
-        })
-    }
-
-    fn draw_free_button(&mut self, window: &mut Window) -> Result<()> {
-        let free_rect = self.free_button;
-
-        window.draw(&free_rect, Col(Color::CYAN));
-        self.free_text.execute(|image| {
-            window.draw(&image.area().with_center(free_rect.center()), Img(&image));
-            Ok(())
-        })?;
-
-        Ok(())
-    }
-
-    fn draw_allocate_button(&mut self, window: &mut Window) -> Result<()> {
-        let allocate_rect = self.allocate_button;
-
-        window.draw(&allocate_rect, Col(Color::CYAN));
-        self.allocate_text.execute(|image| {
-            window.draw(&image.area().with_center(allocate_rect.center()), Img(&image));
-            Ok(())
-        })?;
-
-        Ok(())
-    }
-
-
-    fn draw_coalesce_menu(&mut self, window: &mut Window) -> Result<()> {
-        let coalesce_l_rect = self.coalesce_left_button;
-        let coalesce_r_rect = self.coalesce_right_button;
-
-        window.draw(&coalesce_l_rect, Col(Color::CYAN));
-        self.coalesce_left_text.execute(|image| {
-            window.draw(&image.area().with_center(coalesce_l_rect.center()), Img(&image));
-            Ok(())
-        })?;
-
-
-        window.draw(&coalesce_r_rect, Col(Color::CYAN));
-        self.coalesce_right_text.execute(|image| {
-            window.draw(&image.area().with_center(coalesce_r_rect.center()), Img(&image));
-            Ok(())
-        })?;
-
-        Ok(())
-    }
-
-    fn draw_split_button(&mut self, window: &mut Window) -> Result<()> {
-        let split_rect = self.split_button;
-
-        window.draw(&split_rect, Col(Color::CYAN));
-        self.split_text.execute(|image| {
-            window.draw(&image.area().with_center(split_rect.center()), Img(&image));
-            Ok(())
-        })?;
-
-        Ok(())
-    }
-
-    fn draw(&mut self, window: &mut Window, block: &mut Block) -> Result<()> {
-
-        let mut y_off = self.y_offset;
-
-        if block.allocated {
-            self.draw_free_button(window)?;
-        } else {
-            self.draw_allocate_button(window)?;
-            self.draw_coalesce_menu(window)?;
-        }
-        self.draw_split_button(window)?;
-
-        y_off += self.free_button.height() + 50.0;
-        let x = self.font_size.x;
-        let y = self.font_size.y;
-        let blk_size =
-            (block.rect.width()/(PX_PER_BYTE as f32) + MEM_GAP as f32) as i32;
-
-        let size_str: String = blk_size.to_string();
-        self.font_num_map.execute(|image| {
-            for (i, c) in size_str.chars().enumerate() {
-                let index = ((c as i32) - ('0' as i32)) as f32;
-                let subimg = &image.subimage(
-                    Rectangle::new((index*x, 0), (x, y)));
-                let x_off = (i as f32)*x + x/2.0;
-                window.draw(
-                    &subimg.area().with_center((x_off, y_off)), Img(&subimg));
-            }
-            Ok(())
-        })?;
-
-        let used_str = block.space_used.to_string();
-        let x_offset = (size_str.chars().count() as f32) * x + 2.0 * x;
-        self.font_num_map.execute(|image| {
-            for (i, c) in used_str.chars().enumerate() {
-                let index = ((c as i32) - ('0' as i32)) as f32;
-                let subimg = &image.subimage(
-                    Rectangle::new((index*x, 0), (x, y)));
-                let x_off = (i as f32)*x + x/2.0;
-                window.draw(
-                    &subimg.area().with_center((x_offset + x_off, y_off)), Img(&subimg));
-            }
-            Ok(())
-        })?;
-
-        Ok(())
-    }
-}
+mod objects;
+mod constants;
+use crate::objects::*;
+use crate::constants::*;
 
 struct MallocState {
     allocations: Vec<Block>,
@@ -226,11 +25,6 @@ struct MallocState {
     sbrk_obj: SbrkDescriptor,
     display_menu: Option<usize>,
 }
-
-static TOTAL_MEMORY: i32 = 4*1024;
-static PX_PER_BYTE: i32 = 1;
-static SBRK_MENU_PX: i32 = 100;
-static MEM_GAP: i32 = 5;
 
 impl MallocState {
     fn alert_user(msg: &str) {
@@ -506,6 +300,7 @@ impl State for MallocState {
         }
         Ok(())
     }
+
     fn draw(&mut self, window: &mut Window) -> Result<()> {
         window.clear(Color::WHITE)?;
         window.draw(&self.sbrk_obj.sbrk_rect, Col(Color::CYAN));
@@ -521,6 +316,14 @@ impl State for MallocState {
             let rect = alloc.rect;
             if alloc.allocated {
                 window.draw(&rect, Col(Color::RED));
+                let filled = Rectangle::new(
+                    (rect.x(), rect.y()),
+                    (alloc.space_used - MEM_GAP, SBRK_MENU_PX));
+                let color = Color::WHITE;
+                let color = color.with_red(244.0/256.0)
+                    .with_blue(113.0/256.0)
+                    .with_green(66.0/256.0);
+                window.draw(&filled, Col(color));
             } else {
                 window.draw(&rect, Col(Color::BLUE));
             }
@@ -529,10 +332,7 @@ impl State for MallocState {
         match self.display_menu {
             Some(i) => {
                 let block_rect = self.allocations[i].rect;
-                let mut color = Color::BLUE.with_red(0.5);
-                if self.allocations[i].allocated {
-                    color = Color::RED.with_blue(0.5);
-                }
+                let color = Color::BLACK.with_alpha(0.25);
                 window.draw_ex(&block_rect, Col(color), Transform::IDENTITY, 0);
                 self.alloc_menu.draw(window, &mut self.allocations[i])?;
             }
