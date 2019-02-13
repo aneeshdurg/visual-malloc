@@ -26,9 +26,13 @@
     <script src="malloc-vis.js"></script>
     <script>
       // Hack to fix rendering
-      while (document.querySelector('canvas') == null) {};
-      document.getElementbyId('render').appendChild(
-        document.querySelector('canvas'));
+      var fix_display = setInterval(function() {
+          if (document.querySelector('canvas') != null)) {
+            document.getElementbyId('render').appendChild(
+              document.querySelector('canvas'));
+             clearInterval(fix_display);
+          }
+      }, 100);
     </script>
     <div id="render" style="overflow: auto; height: 75%; width: 100%;">
     </div>
