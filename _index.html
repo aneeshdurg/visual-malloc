@@ -26,6 +26,7 @@
     <script src="malloc-vis.js"></script>
     <script>
       // Hack to fix rendering
+      while (document.querySelector('canvas') == null) {};
       document.getElementbyId('render').appendChild(
         document.querySelector('canvas'));
     </script>
