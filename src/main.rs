@@ -446,6 +446,15 @@ impl MallocState {
         }
         Ok(())
     }
+
+    fn handle_scroll(&mut self, pos: &Vector) -> Result<()> {
+        js! {
+            var box = document.getElementById("render");
+            box.scrollTo(box.scrollLeft + @{pos.x}, box.scrollTop + @{pos.y});
+        }
+
+        Ok(())
+    }
 }
 
 impl State for MallocState {
@@ -489,7 +498,10 @@ impl State for MallocState {
             }
             Event::MouseMoved(pos) => {
                 return self.handle_mouse_moved(pos, window);
-            } 
+            }
+            Event::MouseWheel(pos) => {
+                return self.handle_scroll(pos);
+            }
             _=> {}
         }
         Ok(())
