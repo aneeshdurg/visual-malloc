@@ -75,6 +75,12 @@ impl MallocState {
             "Enter number of bytes to be used")
                 .try_into().unwrap();
 
+        if bytes < 0 {
+            MallocState::alert_user(
+                "Must allocate a positive amount.");
+            return;
+        }
+
         let block_size: i32 =
             self.allocations[idx].rect.width() as i32 + MEM_GAP;
         if bytes <= block_size {
@@ -179,7 +185,7 @@ impl MallocState {
                        if self.coalesce(i as i64 - 1, i as i64) {
                            self.display_menu = None;
                        }
-                   } else { }
+                   }
                }
                _ => {}
            }
@@ -372,8 +378,8 @@ impl State for MallocState {
                 let filled = Rectangle::new(
                     (rect.x(), rect.y()),
                     (alloc.space_used - MEM_GAP, SBRK_MENU_PX));
-                let color = Color::WHITE;
-                let color = color.with_red(244.0/256.0)
+                let color = Color::WHITE
+                    .with_red(244.0/256.0)
                     .with_blue(113.0/256.0)
                     .with_green(66.0/256.0);
                 window.draw(&filled, Col(color));

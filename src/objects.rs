@@ -43,6 +43,21 @@ pub struct AllocationMenu {
     pub font_num_map: Asset<Image>,
 }
 
+pub fn draw_button(
+        button: Rectangle,
+        text: &mut Asset<Image>,
+        window: &mut Window
+    ) -> Result<()> {
+
+    window.draw(&button, Col(Color::CYAN));
+    text.execute(|image| {
+        window.draw(&image.area().with_center(button.center()), Img(&image));
+        Ok(())
+    })?;
+
+    Ok(())
+}
+
 impl AllocationMenu {
     pub fn new(font_size_x: f32, font_size_y: f32, y_offset: f32) -> Result<Self> {
         let font_num_map = Asset::new(Font::load("mononoki-Regular.ttf")
@@ -84,25 +99,39 @@ impl AllocationMenu {
         let center_x = (SBRK_MENU_PX as f32) + 5.0;
         let center_y = y_offset + (SBRK_MENU_PX as f32)/2.0;
 
+        let button_size = Vector::new(2*SBRK_MENU_PX, SBRK_MENU_PX);
+
         Ok(AllocationMenu {
             y_offset: y_offset,
-            free_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
+            free_button: Rectangle::new((0, 0), button_size)
                 .with_center((center_x, center_y)),
             free_text: free_asset,
 
-            allocate_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
+            allocate_button: Rectangle::new((0, 0), button_size)
                 .with_center((center_x, center_y)),
             allocate_text: allocate_asset,
 
-            coalesce_left_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
-                .with_center((center_x, center_y + 2.0 * (SBRK_MENU_PX as f32))),
+            coalesce_left_button: Rectangle::new((0, 0), button_size)
+                .with_center(
+                    (
+                        center_x,
+                        center_y + 2.0 * (SBRK_MENU_PX as f32)
+                    )),
             coalesce_left_text: coalesce_left_asset,
-            coalesce_right_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
-                .with_center((center_x + 2.5 * (SBRK_MENU_PX as f32), center_y + 2.0 * (SBRK_MENU_PX as f32))),
+            coalesce_right_button: Rectangle::new((0, 0), button_size)
+                .with_center(
+                    (
+                        center_x + 2.5 * (SBRK_MENU_PX as f32),
+                        center_y + 2.0 * (SBRK_MENU_PX as f32)
+                    )),
             coalesce_right_text: coalesce_right_asset,
 
-            split_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
-                .with_center((center_x + 5.0 * (SBRK_MENU_PX as f32), center_y + 2.0 * (SBRK_MENU_PX as f32))),
+            split_button: Rectangle::new((0, 0), button_size)
+                .with_center(
+                    (
+                        center_x + 5.0 * (SBRK_MENU_PX as f32),
+                        center_y + 2.0 * (SBRK_MENU_PX as f32)
+                    )),
             split_text: split_asset,
 
             font_size: Vector::new(font_size_x, font_size_y),
@@ -111,64 +140,34 @@ impl AllocationMenu {
     }
 
     pub fn draw_free_button(&mut self, window: &mut Window) -> Result<()> {
-        let free_rect = self.free_button;
-
-        window.draw(&free_rect, Col(Color::CYAN));
-        self.free_text.execute(|image| {
-            window.draw(&image.area().with_center(free_rect.center()), Img(&image));
-            Ok(())
-        })?;
-
-        Ok(())
+        draw_button(self.free_button, &mut self.free_text, window)
     }
 
     pub fn draw_allocate_button(&mut self, window: &mut Window) -> Result<()> {
-        let allocate_rect = self.allocate_button;
-
-        window.draw(&allocate_rect, Col(Color::CYAN));
-        self.allocate_text.execute(|image| {
-            window.draw(&image.area().with_center(allocate_rect.center()), Img(&image));
-            Ok(())
-        })?;
-
-        Ok(())
+        draw_button(self.allocate_button, &mut self.allocate_text, window)
     }
 
 
     pub fn draw_coalesce_menu(&mut self, window: &mut Window) -> Result<()> {
-        let coalesce_l_rect = self.coalesce_left_button;
-        let coalesce_r_rect = self.coalesce_right_button;
+        draw_button(
+            self.coalesce_left_button,
+            &mut self.coalesce_left_text,
+            window
+        )?;
 
-        window.draw(&coalesce_l_rect, Col(Color::CYAN));
-        self.coalesce_left_text.execute(|image| {
-            window.draw(&image.area().with_center(coalesce_l_rect.center()), Img(&image));
-            Ok(())
-        })?;
-
-
-        window.draw(&coalesce_r_rect, Col(Color::CYAN));
-        self.coalesce_right_text.execute(|image| {
-            window.draw(&image.area().with_center(coalesce_r_rect.center()), Img(&image));
-            Ok(())
-        })?;
-
-        Ok(())
+        draw_button(
+            self.coalesce_right_button,
+            &mut self.coalesce_right_text,
+            window
+        )
     }
 
     pub fn draw_split_button(&mut self, window: &mut Window) -> Result<()> {
-        let split_rect = self.split_button;
-
-        window.draw(&split_rect, Col(Color::CYAN));
-        self.split_text.execute(|image| {
-            window.draw(&image.area().with_center(split_rect.center()), Img(&image));
-            Ok(())
-        })?;
-
-        Ok(())
+        draw_button(self.split_button, &mut self.split_text, window)
     }
 
-    pub fn draw(&mut self, window: &mut Window, block: &mut Block) -> Result<()> {
-
+    pub fn draw(
+            &mut self, window: &mut Window, block: &mut Block) -> Result<()> {
         let mut y_off = self.y_offset;
 
         if block.allocated {
