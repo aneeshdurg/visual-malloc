@@ -2,8 +2,8 @@ extern crate quicksilver;
 use quicksilver::{
     Future, Result,
     combinators::result,
-    geom::{Shape, Rectangle, Vector, Transform},
-    graphics::{Background::Col, Background::Img, Color, Font, FontStyle},
+    geom::{Shape, Rectangle, Vector},
+    graphics::{Background::Col, Background::Img, Color, Font, FontStyle, Image},
     input::{MouseButton, ButtonState},
     lifecycle::{Asset, Event, Settings, State, Window, run}
 };
@@ -18,6 +18,30 @@ mod objects;
 mod constants;
 use crate::objects::*;
 use crate::constants::*;
+
+pub fn draw_num(
+        font_num_map: &mut Asset<Image>,
+        font_size: &Vector,
+        num: i32,
+        start: &Vector,
+        window: &mut Window
+    ) -> Result<()> {
+    let size_str: String = num.to_string();
+    let x = font_size.x;
+    let y = font_size.y;
+    font_num_map.execute(|image| {
+        for (i, c) in size_str.chars().enumerate() {
+            let index = ((c as i32) - ('0' as i32)) as f32;
+            let subimg = &image.subimage(
+                Rectangle::new((index*x, 0), (x, y)));
+            let x_off = start.x + (i as f32)*x + x/2.0;
+            window.draw(&subimg.area()
+                            .with_center((x_off, start.y + y/2.0)),
+                        Img(&subimg));
+        }
+        Ok(())
+    })
+}
 
 struct MallocState {
     allocations: Vec<Block>,
@@ -249,6 +273,41 @@ impl MallocState {
 
         Ok(())
     }
+
+    fn draw_sbrk(&mut self, window: &mut Window) -> Result<()> {
+        window.draw(&self.sbrk_obj.sbrk_rect, Col(Color::CYAN));
+        let text_offset = (SBRK_MENU_PX as f32)/2.0;
+        let text_x = self.sbrk_obj.sbrk_rect.x() + text_offset;
+        let text_y = text_offset;
+        self.sbrk_obj.sbrk.execute(|image| {
+            window.draw(&image.area().with_center((text_x, text_y)), Img(&image));
+            Ok(())
+        })?;
+
+        if self.sbrk_obj.selected {
+            let selected_overlay = Color::BLACK.with_alpha(0.25);
+            window.draw(&self.sbrk_obj.sbrk_rect, Col(selected_overlay));
+
+            let curr_bytes =
+                (self.sbrk_obj.sbrk_rect.x()/(PX_PER_BYTE as f32)) as i32;
+            let new_bytes = curr_bytes - self.sbrk_obj.end_of_heap_bytes;
+
+            if new_bytes >= 0 {
+                draw_num(
+                    &mut self.alloc_menu.font_num_map,
+                    &self.alloc_menu.font_size,
+                    new_bytes,
+                    &Vector::new(
+                        self.sbrk_obj.sbrk_rect.x(),
+                        self.sbrk_obj.sbrk_rect.y()
+                            + self.sbrk_obj.sbrk_rect.height() + 1.0
+                    ),
+                    window
+                )?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl State for MallocState {
@@ -303,14 +362,7 @@ impl State for MallocState {
 
     fn draw(&mut self, window: &mut Window) -> Result<()> {
         window.clear(Color::WHITE)?;
-        window.draw(&self.sbrk_obj.sbrk_rect, Col(Color::CYAN));
-        let text_offset = (SBRK_MENU_PX as f32)/2.0;
-        let text_x = self.sbrk_obj.sbrk_rect.x() + text_offset;
-        let text_y = text_offset;
-        self.sbrk_obj.sbrk.execute(|image| {
-            window.draw(&image.area().with_center((text_x, text_y)), Img(&image));
-            Ok(())
-        })?;
+        self.draw_sbrk(window)?;
 
         for alloc in (&self.allocations).iter() {
             let rect = alloc.rect;
@@ -333,7 +385,7 @@ impl State for MallocState {
             Some(i) => {
                 let block_rect = self.allocations[i].rect;
                 let color = Color::BLACK.with_alpha(0.25);
-                window.draw_ex(&block_rect, Col(color), Transform::IDENTITY, 0);
+                window.draw(&block_rect, Col(color));
                 self.alloc_menu.draw(window, &mut self.allocations[i])?;
             }
             _ => {}
