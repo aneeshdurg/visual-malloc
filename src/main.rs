@@ -201,6 +201,7 @@ impl MallocState {
            }
        }
 
+       self.display_menu = None;
        for (i, alloc) in (&self.allocations).iter().enumerate() {
            let rect = alloc.rect;
            if mouse_pos.overlaps_rectangle(&rect) {
@@ -398,7 +399,7 @@ impl State for MallocState {
 pub fn main() {
     run::<MallocState>(
         "Malloc Visualization",
-        Vector::new(TOTAL_MEMORY*PX_PER_BYTE + SBRK_MENU_PX, 800),
+        Vector::new(TOTAL_MEMORY*PX_PER_BYTE + SBRK_MENU_PX, 600),
         Settings::default()
     );
 }
