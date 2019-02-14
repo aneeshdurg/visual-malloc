@@ -1,4 +1,5 @@
 use crate::constants::*;
+use crate::draw_num;
 
 use quicksilver::{
     Future, Result,
@@ -22,7 +23,6 @@ pub struct SbrkDescriptor {
     pub old_mouse_pos: Option<Vector>,
 }
 
-
 pub struct AllocationMenu {
     y_offset: f32,
     pub free_button: Rectangle,
@@ -39,8 +39,8 @@ pub struct AllocationMenu {
     pub allocate_button: Rectangle,
     pub allocate_text: Asset<Image>,
 
-    font_size: Vector,
-    font_num_map: Asset<Image>,
+    pub font_size: Vector,
+    pub font_num_map: Asset<Image>,
 }
 
 impl AllocationMenu {
@@ -98,11 +98,11 @@ impl AllocationMenu {
                 .with_center((center_x, center_y + 2.0 * (SBRK_MENU_PX as f32))),
             coalesce_left_text: coalesce_left_asset,
             coalesce_right_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
-                .with_center((center_x + 2.0 * (SBRK_MENU_PX as f32), center_y + 2.0 * (SBRK_MENU_PX as f32))),
+                .with_center((center_x + 2.5 * (SBRK_MENU_PX as f32), center_y + 2.0 * (SBRK_MENU_PX as f32))),
             coalesce_right_text: coalesce_right_asset,
 
             split_button: Rectangle::new((0, 0), (2*SBRK_MENU_PX, SBRK_MENU_PX))
-                .with_center((center_x, center_y + 4.0 * (SBRK_MENU_PX as f32))),
+                .with_center((center_x + 5.0 * (SBRK_MENU_PX as f32), center_y + 2.0 * (SBRK_MENU_PX as f32))),
             split_text: split_asset,
 
             font_size: Vector::new(font_size_x, font_size_y),
@@ -179,38 +179,27 @@ impl AllocationMenu {
         }
         self.draw_split_button(window)?;
 
-        y_off += self.free_button.height() + 50.0;
-        let x = self.font_size.x;
-        let y = self.font_size.y;
+        y_off += self.free_button.height() + MEM_GAP as f32;
         let blk_size =
             (block.rect.width()/(PX_PER_BYTE as f32) + MEM_GAP as f32) as i32;
+        draw_num(
+            &mut self.font_num_map,
+            &self.font_size,
+            blk_size,
+            &Vector::new(MEM_GAP, y_off),
+            window
+        )?;
 
-        let size_str: String = blk_size.to_string();
-        self.font_num_map.execute(|image| {
-            for (i, c) in size_str.chars().enumerate() {
-                let index = ((c as i32) - ('0' as i32)) as f32;
-                let subimg = &image.subimage(
-                    Rectangle::new((index*x, 0), (x, y)));
-                let x_off = (i as f32)*x + x/2.0;
-                window.draw(
-                    &subimg.area().with_center((x_off, y_off)), Img(&subimg));
-            }
-            Ok(())
-        })?;
-
-        let used_str = block.space_used.to_string();
-        let x_offset = (size_str.chars().count() as f32) * x + 2.0 * x;
-        self.font_num_map.execute(|image| {
-            for (i, c) in used_str.chars().enumerate() {
-                let index = ((c as i32) - ('0' as i32)) as f32;
-                let subimg = &image.subimage(
-                    Rectangle::new((index*x, 0), (x, y)));
-                let x_off = (i as f32)*x + x/2.0;
-                window.draw(
-                    &subimg.area().with_center((x_offset + x_off, y_off)), Img(&subimg));
-            }
-            Ok(())
-        })?;
+        let x = self.font_size.x;
+        let x_offset =
+            (blk_size.to_string().chars().count() as f32) * x + 2.0 * x;
+        draw_num(
+            &mut self.font_num_map,
+            &self.font_size,
+            block.space_used,
+            &Vector::new(x_offset, y_off),
+            window
+        )?;
 
         Ok(())
     }
