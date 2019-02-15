@@ -141,11 +141,18 @@ impl MallocState {
         let i1 = idx1 as usize;
         let i2 = idx2 as usize;
 
+        let mut can_coalesce = true;
         if idx1 < 0 {
-            return false;
+            can_coalesce = false;
         } else if idx2 > (self.allocations.len() as i64 - 1) {
-            return false;
-        } else if self.allocations[i1].allocated || self.allocations[i2].allocated {
+            can_coalesce = false;
+        } else if self.allocations[i1].allocated ||
+                self.allocations[i2].allocated {
+            can_coalesce = false;
+        }
+
+        if !can_coalesce {
+            MallocState::alert_user("Can't coalesce without a free neighbor.");
             return false;
         }
 
@@ -205,9 +212,10 @@ impl MallocState {
                Some(i) => { self.do_split(i); }
                _ => {}
            }
+       } else {
+           self.display_menu = None;
        }
 
-       self.display_menu = None;
        for (i, alloc) in (&self.allocations).iter().enumerate() {
            let rect = alloc.rect;
            if mouse_pos.overlaps_rectangle(&rect) {
