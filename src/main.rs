@@ -75,6 +75,12 @@ impl MallocState {
             "Enter number of bytes to be used")
                 .try_into().unwrap();
 
+        if bytes < 0 {
+            MallocState::alert_user(
+                "Must allocate a positive amount.");
+            return;
+        }
+
         let block_size: i32 =
             self.allocations[idx].rect.width() as i32 + MEM_GAP;
         if bytes <= block_size {
@@ -135,11 +141,18 @@ impl MallocState {
         let i1 = idx1 as usize;
         let i2 = idx2 as usize;
 
+        let mut can_coalesce = true;
         if idx1 < 0 {
-            return false;
+            can_coalesce = false;
         } else if idx2 > (self.allocations.len() as i64 - 1) {
-            return false;
-        } else if self.allocations[i1].allocated || self.allocations[i2].allocated {
+            can_coalesce = false;
+        } else if self.allocations[i1].allocated ||
+                self.allocations[i2].allocated {
+            can_coalesce = false;
+        }
+
+        if !can_coalesce {
+            MallocState::alert_user("Can't coalesce without a free neighbor.");
             return false;
         }
 
@@ -179,7 +192,7 @@ impl MallocState {
                        if self.coalesce(i as i64 - 1, i as i64) {
                            self.display_menu = None;
                        }
-                   } else { }
+                   }
                }
                _ => {}
            }
@@ -199,9 +212,10 @@ impl MallocState {
                Some(i) => { self.do_split(i); }
                _ => {}
            }
+       } else {
+           self.display_menu = None;
        }
 
-       self.display_menu = None;
        for (i, alloc) in (&self.allocations).iter().enumerate() {
            let rect = alloc.rect;
            if mouse_pos.overlaps_rectangle(&rect) {
@@ -372,8 +386,8 @@ impl State for MallocState {
                 let filled = Rectangle::new(
                     (rect.x(), rect.y()),
                     (alloc.space_used - MEM_GAP, SBRK_MENU_PX));
-                let color = Color::WHITE;
-                let color = color.with_red(244.0/256.0)
+                let color = Color::WHITE
+                    .with_red(244.0/256.0)
                     .with_blue(113.0/256.0)
                     .with_green(66.0/256.0);
                 window.draw(&filled, Col(color));
